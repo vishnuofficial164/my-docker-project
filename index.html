@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Z10R Camera System</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== Landing / boot screen ===== -->
+  <section class="boot" id="boot">
+    <p class="eyebrow">Z10R CAMERA SYSTEM</p>
+    <h1>Full manual control.<br />AI always on.</h1>
+    <p class="lede">
+      CameraX-powered capture for the Dimensity 7400: 50MP OIS rear, 32MP front,
+      4K on both lenses. Auto HDR, scene and face detection, and low-light boost
+      run by default with a visible status chip in the viewfinder.
+    </p>
+    <ul class="boot-items">
+      <li><span class="dot"></span>Live AI status chip: HDR, night boost, scene detection</li>
+      <li><span class="dot"></span>Bottom control rail: mode, timer, grid, ratio, filters</li>
+      <li><span class="dot"></span>One-tap lens swap between 50MP wide and 32MP selfie</li>
+    </ul>
+    <button class="cta" id="openCamera">Open Camera</button>
+    <p class="boot-note">Uses your device camera. Nothing leaves this phone.</p>
+  </section>
+
+  <!-- ===== Viewfinder stage ===== -->
+  <section class="stage hidden" id="stage" aria-label="Viewfinder">
+    <div class="frame" id="frame">
+      <video id="viewfinder" autoplay playsinline muted></video>
+      <div class="ratio-mask" id="ratioMask" data-ratio="4:3"></div>
+
+      <div class="grid-overlay thirds hidden" id="gridOverlay" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+
+      <!-- Top status bar -->
+      <header class="topbar">
+        <div class="ai-chip live" id="aiChip" role="status" aria-live="polite">
+          <span class="pulse" aria-hidden="true"></span>
+          <span id="aiChipText">AI&nbsp;ON · HDR</span>
+        </div>
+        <div class="lens-tag" id="lensTag">50MP · OIS</div>
+      </header>
+
+      <!-- Focus reticle -->
+      <div class="reticle hidden" id="reticle" aria-hidden="true"></div>
+
+      <!-- Countdown -->
+      <div class="countdown hidden" id="countdown" role="timer" aria-live="assertive"></div>
+
+      <!-- Pro manual panel -->
+      <div class="pro-panel hidden" id="proPanel" aria-label="Pro manual controls">
+        <div class="pro-readout" id="proReadout">ISO 400 · 1/60 · 5500K · EV 0.0</div>
+        <div class="pro-sliders">
+          <label>ISO
+            <input type="range" id="isoRange" min="100" max="6400" step="100" value="400" />
+            <output id="isoVal">400</output>
+          </label>
+          <label>SHUTTER
+            <input type="range" id="shutRange" min="0" max="11" step="1" value="6" />
+            <output id="shutVal">1/60</output>
+          </label>
+          <label>WB K
+            <input type="range" id="wbRange" min="2000" max="8000" step="100" value="5500" />
+            <output id="wbVal">5500</output>
+          </label>
+          <label>EV
+            <input type="range" id="evRange" min="-2" max="2" step="0.1" value="0" />
+            <output id="evVal">0.0</output>
+          </label>
+          <label>FOCUS
+            <input type="range" id="focusRange" min="10" max="100" step="1" value="100" />
+            <output id="focusVal">AUTO</output>
+          </label>
+          <label>ZOOM
+            <input type="range" id="zoomRange" min="100" max="800" step="10" value="100" />
+            <output id="zoomVal">1.0x</output>
+          </label>
+        </div>
+        <div class="pro-actions">
+          <button class="strip-btn" id="histBtn" aria-pressed="false">HIST</button>
+          <button class="strip-btn" id="spotBtn" aria-pressed="false">SPOT COLOR</button>
+          <button class="strip-btn" id="pngBtn" aria-pressed="false">PNG LOSSLESS</button>
+          <button class="strip-btn" id="proReset">RESET</button>
+        </div>
+        <canvas id="histogram" width="160" height="64" class="hidden" aria-label="Live histogram"></canvas>
+      </div>
+
+      <!-- Bottom control rail -->
+      <div class="rail">
+        <div class="rail-strip" role="tablist" aria-label="Settings">
+          <div class="strip-group" id="timerStrip" role="group" aria-label="Timer">
+            <button class="strip-btn active" data-timer="0">OFF</button>
+            <button class="strip-btn" data-timer="3">3s</button>
+            <button class="strip-btn" data-timer="10">10s</button>
+          </div>
+          <div class="strip-group" role="group" aria-label="Grid">
+            <button class="strip-btn" id="gridBtn">GRID</button>
+          </div>
+          <div class="strip-group" id="ratioStrip" role="group" aria-label="Aspect ratio">
+            <button class="strip-btn active" data-ratio="4:3">4:3</button>
+            <button class="strip-btn" data-ratio="16:9">16:9</button>
+            <button class="strip-btn" data-ratio="1:1">1:1</button>
+          </div>
+          <div class="strip-group" id="filterStrip" role="group" aria-label="Filters">
+            <button class="strip-btn active" data-filter="none">NATURAL</button>
+            <button class="strip-btn" data-filter="vivid">VIVID</button>
+            <button class="strip-btn" data-filter="mono">MONO</button>
+            <button class="strip-btn" data-filter="warm">WARM</button>
+          </div>
+        </div>
+
+        <div class="modes" role="tablist" aria-label="Capture mode">
+          <button class="mode-btn" role="tab" aria-selected="false" data-mode="night">NIGHT</button>
+          <button class="mode-btn" role="tab" aria-selected="false" data-mode="portrait">PORTRAIT</button>
+          <button class="mode-btn active" role="tab" aria-selected="true" data-mode="photo">PHOTO</button>
+          <button class="mode-btn" role="tab" aria-selected="false" data-mode="video">VIDEO</button>
+          <button class="mode-btn" role="tab" aria-selected="false" data-mode="pro">PRO</button>
+        </div>
+
+        <div class="shutter-row">
+          <button class="thumb" id="galleryBtn" aria-label="Open gallery">
+            <img id="lastShot" alt="" hidden />
+            <span class="thumb-empty" id="thumbEmpty"></span>
+          </button>
+          <button class="shutter" id="shutter" aria-label="Shutter">
+            <span class="shutter-inner"></span>
+          </button>
+          <button class="lens-swap" id="swapBtn" aria-label="Switch camera">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 19H5a2 2 0 0 1-2-2v-5" /><path d="m8 15-3 3 3 3" />
+              <path d="M13 5h6a2 2 0 0 1 2 2v5" /><path d="m16 9 3-3-3-3" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Camera error state -->
+      <div class="cam-error hidden" id="camError" role="alert">
+        <p class="err-title">CAMERA UNAVAILABLE</p>
+        <p class="err-body" id="camErrorMsg">Permission denied or no camera found.</p>
+        <div class="err-actions">
+          <button class="btn-ghost" id="retryCam">Retry</button>
+          <button class="btn-ghost" id="demoCam">Demo frame</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Gallery overlay ===== -->
+  <section class="gallery hidden" id="gallery" aria-label="Gallery" role="dialog" aria-modal="true">
+    <header class="gallery-top">
+      <p class="eyebrow">CAPTURES</p>
+      <button class="btn-ghost" id="closeGallery">CLOSE</button>
+    </header>
+    <div class="gallery-body">
+      <div class="shot-viewer" id="shotViewer">
+        <p class="empty-note" id="galleryEmpty">No captures yet. Press the shutter.</p>
+        <img id="shotFull" alt="Captured photo" hidden />
+      </div>
+      <div class="gallery-strip" id="galleryStrip" aria-label="Thumbnails"></div>
+      <div class="shot-actions">
+        <button class="btn-ghost" id="downloadShot" disabled>SAVE</button>
+        <button class="btn-ghost" id="deleteShot" disabled>DELETE</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="flash" id="flash" aria-hidden="true"></div>
+  <p class="toast hidden" id="toast" role="status"></p>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
