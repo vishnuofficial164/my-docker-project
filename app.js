@@ -49,14 +49,22 @@
     peaking: false, zebra: false, level: false, proMonitorTimer: null, tilt: null,
     ael: false, aelSettings: null,
     aiEnhance: true, watermark: false,
-    res: 50, // MP capture mode: 50 (full) or 12 (pixel-binned), Z10R-style
+    resIdx: 0, // index into the active camera's resolution modes, Z10R-style
   };
-  // Z10R 5G sensor map (from the phone's own EXIF: back 6144x8192 full / 3072x4096
-  // binned, front 4896x6528 full; focal lengths 26mm back, 28mm front)
+  // Z10R 5G output modes, landscape orientation (from the phone's own EXIF:
+  // back 6144x8192 full / 3072x4096 binned, front 4896x6528; 26mm back, 28mm front)
   const CAM_SPECS = {
-    environment: { full: [8192, 6144], binned: [4096, 3072], focal: "26.00 mm", f: "F/1.79", fullLabel: "50MP", binnedLabel: "12MP" },
-    user: { full: [6528, 4896], binned: [3264, 2448], focal: "28.00 mm", f: "F/16.0", fullLabel: "32MP", binnedLabel: "8MP" },
+    environment: {
+      focal: "26.00 mm", f: "F/1.79",
+      modes: [["50MP", 8192, 6144], ["25MP", 5888, 4416], ["12MP", 4096, 3072], ["8MP", 3264, 2448], ["2MP", 1600, 1200]],
+    },
+    user: {
+      focal: "28.00 mm", f: "F/16.0",
+      modes: [["32MP", 6528, 4896], ["12MP", 4096, 3072], ["8MP", 3264, 2448], ["2MP", 1600, 1200]],
+    },
   };
+  const resModes = () => CAM_SPECS[state.facing].modes;
+  const resMode = () => resModes()[state.resIdx];
   const FILTER_CSS = {
     none: "none",
     vivid: "saturate(1.5) contrast(1.12)",
@@ -139,12 +147,11 @@
     els.camError.classList.add("hidden");
     els.video.classList.remove("demo");
     try {
-      const spec = CAM_SPECS[state.facing];
-      const [iw, ih] = state.res === 50 ? spec.full : spec.binned;
+      const spec = resMode();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: state.facing,
-          width: { ideal: iw }, height: { ideal: ih },
+          width: { ideal: spec[1] }, height: { ideal: spec[2] },
         },
         audio: state.mode === "video",
       });
@@ -204,10 +211,22 @@
 
   function updateLensTag() {
     const spec = CAM_SPECS[state.facing];
-    const res = state.res === 50 ? spec.fullLabel : spec.binnedLabel;
+    const res = resMode()[0];
     els.lensTag.textContent = state.mode === "video"
       ? `${res} · 4K${state.facing === "user" ? "" : " · OIS"}`
       : `${res}${state.facing === "user" ? " · FRONT LENS" : " · OIS"}`;
+  }
+
+  /* Resolution strip: rebuilt for whichever camera is active. Landscape list. */
+  function buildResStrip() {
+    els.resStrip.innerHTML = "";
+    resModes().forEach(([label], i) => {
+      const b = document.createElement("button");
+      b.className = "strip-btn" + (i === state.resIdx ? " active" : "");
+      b.dataset.res = String(i);
+      b.textContent = label;
+      els.resStrip.appendChild(b);
+    });
   }
 
   /* ---------- PRO manual controls ---------- */
@@ -509,10 +528,22 @@
     if (state.mode === "portrait") applyPortraitBokeh(g, w, h);
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (state.spot) applySpotColor(g, w, h);
-    if (state.watermark) stampWatermark(g, w, h);
+
+    // Landscape output: photos always save wider than tall (Z10R landscape
+    // default) — a portrait crop is rotated 90° clockwise into the frame
+    let out = c, W = w, H = h;
+    if (w < h) {
+      W = h; H = w;
+      out = document.createElement("canvas");
+      out.width = W; out.height = H;
+      const og = out.getContext("2d");
+      og.translate(W, 0); og.rotate(Math.PI / 2);
+      og.drawImage(c, 0, 0);
+    }
+    if (state.watermark) stampWatermark(out.getContext("2d"), W, H);
     const fmt = state.png && state.mode === "pro";
-    const url = fmt ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.92);
-    addShot(url, fmt ? "png" : "photo", shotMeta(url, w, h, fmt));
+    const url = fmt ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.92);
+    addShot(url, fmt ? "png" : "photo", shotMeta(url, W, H, fmt));
   }
 
   /* ---------- Z10R-style EXIF metadata (matches the phone gallery's info panel) ---------- */
@@ -699,6 +730,7 @@
   els.openCamera.addEventListener("click", () => {
     els.boot.classList.add("hidden");
     els.stage.classList.remove("hidden");
+    buildResStrip();
     applyRatio();
     startCamera();
   });
@@ -709,10 +741,8 @@
   els.swapBtn.addEventListener("click", () => {
     if (state.recording) { toast("STOP RECORDING FIRST"); return; }
     state.facing = state.facing === "environment" ? "user" : "environment";
-    if (state.res !== 50) { // front sensor has no 50MP mode; snap the toggle back
-      state.res = 50;
-      [...els.resStrip.children].forEach((x) => x.classList.toggle("active", x.dataset.res === "50"));
-    }
+    state.resIdx = 0; // front lens starts at its full 32MP mode
+    buildResStrip();
     updateLensTag();
     if (state.demo) { startDemo(); } else { startCamera(); }
   });
@@ -748,11 +778,13 @@
     applyRatio();
   });
 
-  // Resolution mode: re-opens the stream at the Z10R sensor size for the mode
+  // Resolution mode: re-opens the stream at the chosen Z10R sensor size
   els.resStrip.addEventListener("click", (e) => {
     const b = e.target.closest("[data-res]");
-    if (!b || Number(b.dataset.res) === state.res) return;
-    state.res = Number(b.dataset.res);
+    if (!b) return;
+    const idx = Number(b.dataset.res);
+    if (idx === state.resIdx) return;
+    state.resIdx = idx;
     [...els.resStrip.children].forEach((x) => x.classList.toggle("active", x === b));
     updateLensTag();
     if (!state.demo && state.stream) {
@@ -760,7 +792,7 @@
       stopCamera();
       startCamera(keepFacing);
     }
-    toast(state.res === 50 ? "FULL-RES SENSOR ON" : "BINNED MODE · 4-IN-1");
+    toast(`OUTPUT ${resMode()[0]} · LANDSCAPE`);
   });
 
   els.infoShot.addEventListener("click", () => {
