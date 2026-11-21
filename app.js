@@ -7,6 +7,8 @@
     boot: $("boot"), openCamera: $("openCamera"), stage: $("stage"),
     video: $("viewfinder"), frame: $("frame"), ratioMask: $("ratioMask"),
     gridOverlay: $("gridOverlay"), gridBtn: $("gridBtn"),
+    peakingCanvas: $("peakingCanvas"), zebraCanvas: $("zebraCanvas"),
+    levelGauge: $("levelGauge"), levelLine: $("levelLine"), levelDeg: $("levelDeg"),
     aiChip: $("aiChip"), aiChipText: $("aiChipText"), lensTag: $("lensTag"),
     reticle: $("reticle"), countdown: $("countdown"), portraitVeil: $("portraitVeil"),
     shutter: $("shutter"), swapBtn: $("swapBtn"),
@@ -30,6 +32,7 @@
     focusRange: $("focusRange"), focusVal: $("focusVal"),
     zoomRange: $("zoomRange"), zoomVal: $("zoomVal"),
     histBtn: $("histBtn"), spotBtn: $("spotBtn"), pngBtn: $("pngBtn"), proReset: $("proReset"),
+    peakBtn: $("peakBtn"), zebraBtn: $("zebraBtn"), levelBtn: $("levelBtn"), aelBtn: $("aelBtn"),
     aiBtn: $("aiBtn"), wmBtn: $("wmBtn"),
     histogram: $("histogram"),
   };
@@ -43,6 +46,8 @@
     shots: [], selected: -1, demo: false, lastClipUrl: null,
     pro: { ...DEFAULT_PRO }, sim: {}, // per-control APPLIED vs SIMULATED
     hist: false, histTimer: null, spot: false, spotHue: null, png: false,
+    peaking: false, zebra: false, level: false, proMonitorTimer: null, tilt: null,
+    ael: false, aelSettings: null,
     aiEnhance: true, watermark: false,
     res: 50, // MP capture mode: 50 (full) or 12 (pixel-binned), Z10R-style
   };
@@ -300,7 +305,100 @@
     });
   }
 
-  /* ---------- Spot Color (Moto signature): keep only the sampled hue ---------- */
+  /* ---------- Focus peaking + exposure zebras (shared analysis loop) ---------- */
+  function proMonitorTick() {
+    const v = els.video;
+    if ((state.peaking || state.zebra) && (v.videoWidth || state.demo)) {
+      const off = document.createElement("canvas");
+      off.width = 160; off.height = 120;
+      const octx = off.getContext("2d", { willReadFrequently: true });
+      octx.drawImage(v, 0, 0, 160, 120);
+      const d = octx.getImageData(0, 0, 160, 120).data;
+      if (state.peaking) drawPeaking(octx, d);
+      if (state.zebra) drawZebra(octx, d);
+    }
+    if (state.level) updateLevel();
+  }
+
+  // Highlight in-focus edges (high local contrast) in amber
+  function drawPeaking(ctx, d) {
+    const W = 160, c = els.peakingCanvas.getContext("2d");
+    c.clearRect(0, 0, W, 120);
+    c.fillStyle = "rgba(255,179,0,0.95)";
+    const lum = (i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    for (let y = 1; y < 119; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = (y * W + x) * 4;
+        const g = lum(i);
+        const gx = Math.abs(g - lum(i + 4)), gy = Math.abs(g - lum(i + W * 4));
+        if (gx + gy > 60) c.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // Stripe over blown-out highlights (luminance >= 235)
+  function drawZebra(ctx, d) {
+    const W = 160, c = els.zebraCanvas.getContext("2d");
+    c.clearRect(0, 0, W, 120);
+    c.fillStyle = "rgba(255,255,255,0.55)";
+    for (let y = 0; y < 120; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l >= 235 && (x + y) % 6 < 3) c.fillRect(x, y, 1, 1); // diagonal stripes
+      }
+    }
+  }
+
+  function setProMonitor() {
+    const on = state.peaking || state.zebra || state.level;
+    clearInterval(state.proMonitorTimer);
+    if (on) state.proMonitorTimer = setInterval(proMonitorTick, 150);
+  }
+
+  /* ---------- Horizon level gauge ---------- */
+  function updateLevel() {
+    if (state.tilt === null) { els.levelDeg.textContent = "--°"; return; }
+    const deg = state.tilt;
+    els.levelDeg.textContent = deg.toFixed(1) + "°";
+    els.levelLine.style.transform = `rotate(${deg}deg)`;
+    els.levelGauge.classList.toggle("level-ok", Math.abs(deg) <= 1);
+  }
+
+  function onOrient(e) {
+    if (state.level && e.beta !== null) {
+      // portrait-ish roll: gamma when upright, beta when flat — use gamma
+      state.tilt = e.gamma ?? e.beta;
+    }
+  }
+
+  /* ---------- AE-L / AWB-L: freeze exposure and white balance ---------- */
+  async function toggleAel() {
+    state.ael = !state.ael;
+    els.aelBtn.setAttribute("aria-pressed", String(state.ael));
+    const t = track();
+    if (state.ael) {
+      const s = t && !state.demo ? t.getSettings() : null;
+      state.aelSettings = s ? {
+        exposureMode: "manual", exposureTime: s.exposureTime, iso: s.iso,
+        whiteBalanceMode: "manual", colorTemperature: s.colorTemperature,
+        exposureCompensation: s.exposureCompensation,
+      } : null;
+      if (state.aelSettings) {
+        await t.applyConstraints({ advanced: [state.aelSettings] }).catch(() => {
+          state.aelSettings = null; // honest fallback: software lock only
+        });
+      }
+      toast(state.aelSettings ? "AE / AWB LOCKED" : "AE-L ON (HARDWARE LIMIT · SIM)");
+    } else {
+      state.aelSettings = null;
+      if (t && !state.demo) {
+        await t.applyConstraints({ advanced: [{ exposureMode: "continuous", whiteBalanceMode: "continuous" }] }).catch(() => {});
+      }
+      toast("AE / AWB UNLOCKED");
+    }
+  }
+
   function rgbToHue(r, g, b) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     if (mx === mn) return null;
@@ -717,6 +815,11 @@
       els.histBtn.click();
     } else {
       clearInterval(state.histTimer);
+      // pro assist tools are pro-mode only: switch them off with the mode
+      ["peaking", "zebra", "level"].forEach((k) => {
+        if (state[k]) ({ peaking: () => els.peakBtn.click(), zebra: () => els.zebraBtn.click(), level: () => els.levelBtn.click() })[k]();
+      });
+      if (state.ael) els.aelBtn.click();
       // release manual controls back to the sensor
       const t = track();
       if (t) t.applyConstraints({ advanced: [{ exposureMode: "continuous", whiteBalanceMode: "continuous", focusMode: "continuous" }] }).catch(() => {});
@@ -752,6 +855,36 @@
     clearInterval(state.histTimer);
     if (state.hist) state.histTimer = setInterval(drawHistogram, 150);
   });
+
+  els.peakBtn.addEventListener("click", () => {
+    state.peaking = !state.peaking;
+    els.peakBtn.setAttribute("aria-pressed", String(state.peaking));
+    els.peakingCanvas.classList.toggle("hidden", !state.peaking);
+    setProMonitor();
+    toast(state.peaking ? "FOCUS PEAKING ON" : "FOCUS PEAKING OFF");
+  });
+
+  els.zebraBtn.addEventListener("click", () => {
+    state.zebra = !state.zebra;
+    els.zebraBtn.setAttribute("aria-pressed", String(state.zebra));
+    els.zebraCanvas.classList.toggle("hidden", !state.zebra);
+    setProMonitor();
+    toast(state.zebra ? "ZEBRA · BLOWN HIGHLIGHTS" : "ZEBRA OFF");
+  });
+
+  els.levelBtn.addEventListener("click", () => {
+    state.level = !state.level;
+    els.levelBtn.setAttribute("aria-pressed", String(state.level));
+    els.levelGauge.classList.toggle("hidden", !state.level);
+    if (state.level && !state.orientWired) {
+      state.orientWired = true;
+      window.addEventListener("deviceorientation", onOrient);
+    }
+    setProMonitor();
+    toast(state.level ? "HORIZON LEVEL ON" : "HORIZON LEVEL OFF");
+  });
+
+  els.aelBtn.addEventListener("click", () => { toggleAel(); });
 
   els.spotBtn.addEventListener("click", () => {
     state.spot = !state.spot;

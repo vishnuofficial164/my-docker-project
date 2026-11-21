@@ -40,6 +40,16 @@
       <!-- Portrait bokeh veil (live background blur) -->
       <div class="portrait-veil hidden" id="portraitVeil" aria-hidden="true"></div>
 
+      <!-- Pro assist tools: focus peaking + exposure zebras (viewfinder aids) -->
+      <canvas id="peakingCanvas" class="peaking-canvas hidden" aria-hidden="true"></canvas>
+      <canvas id="zebraCanvas" class="zebra-canvas hidden" aria-hidden="true"></canvas>
+
+      <!-- Horizon level gauge -->
+      <div class="level-gauge hidden" id="levelGauge" aria-hidden="true">
+        <div class="level-line" id="levelLine"></div>
+        <span class="level-deg" id="levelDeg">0.0°</span>
+      </div>
+
       <!-- Top status bar -->
       <header class="topbar">
         <div class="ai-chip live" id="aiChip" role="status" aria-live="polite">
@@ -86,6 +96,10 @@
         </div>
         <div class="pro-actions">
           <button class="strip-btn" id="histBtn" aria-pressed="false">HIST</button>
+          <button class="strip-btn" id="peakBtn" aria-pressed="false">PEAKING</button>
+          <button class="strip-btn" id="zebraBtn" aria-pressed="false">ZEBRA</button>
+          <button class="strip-btn" id="levelBtn" aria-pressed="false">LEVEL</button>
+          <button class="strip-btn" id="aelBtn" aria-pressed="false">AE-L</button>
           <button class="strip-btn" id="spotBtn" aria-pressed="false">SPOT COLOR</button>
           <button class="strip-btn" id="pngBtn" aria-pressed="false">PNG LOSSLESS</button>
           <button class="strip-btn" id="proReset">RESET</button>
