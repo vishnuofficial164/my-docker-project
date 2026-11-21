@@ -1,0 +1,9 @@
+# Build outputs
+.gradle/
+app/build/
+
+# Signing key — regenerate with:
+# keytool -genkeypair -keystore app/keystore/z10r-camera.keystore -alias z10rcamera \
+#   -keyalg RSA -keysize 2048 -validity 10000 -storepass z10rcamera -keypass z10rcamera \
+#   -dname "CN=Z10R Camera,O=Z10R,C=IN"
+app/keystore/
