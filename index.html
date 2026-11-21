@@ -37,6 +37,9 @@
         <span></span><span></span><span></span><span></span>
       </div>
 
+      <!-- Portrait bokeh veil (live background blur) -->
+      <div class="portrait-veil hidden" id="portraitVeil" aria-hidden="true"></div>
+
       <!-- Top status bar -->
       <header class="topbar">
         <div class="ai-chip live" id="aiChip" role="status" aria-live="polite">
@@ -101,6 +104,12 @@
           <div class="strip-group" role="group" aria-label="Grid">
             <button class="strip-btn" id="gridBtn">GRID</button>
           </div>
+          <div class="strip-group" role="group" aria-label="AI Enhancer">
+            <button class="strip-btn active" id="aiBtn" aria-pressed="true">AI ENHANCE</button>
+          </div>
+          <div class="strip-group" role="group" aria-label="Watermark">
+            <button class="strip-btn" id="wmBtn" aria-pressed="false">WATERMARK</button>
+          </div>
           <div class="strip-group" id="ratioStrip" role="group" aria-label="Aspect ratio">
             <button class="strip-btn active" data-ratio="4:3">4:3</button>
             <button class="strip-btn" data-ratio="16:9">16:9</button>
@@ -111,6 +120,12 @@
             <button class="strip-btn" data-filter="vivid">VIVID</button>
             <button class="strip-btn" data-filter="mono">MONO</button>
             <button class="strip-btn" data-filter="warm">WARM</button>
+            <button class="strip-btn" data-filter="cool">COOL</button>
+            <button class="strip-btn" data-filter="noir">NOIR</button>
+            <button class="strip-btn" data-filter="chrome">CHROME</button>
+            <button class="strip-btn" data-filter="fade">FADE</button>
+            <button class="strip-btn" data-filter="pop">POP</button>
+            <button class="strip-btn" data-filter="dusk">DUSK</button>
           </div>
         </div>
 

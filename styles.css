@@ -109,12 +109,19 @@ button:focus-visible, a:focus-visible {
 #viewfinder.mirrored { transform: scaleX(-1); }
 #viewfinder.demo { object-fit: contain; }
 
-/* Filters (applied to preview; baked into captures) */
-#viewfinder[data-filter="vivid"] { filter: saturate(1.5) contrast(1.12); }
-#viewfinder[data-filter="mono"]  { filter: grayscale(1) contrast(1.1); }
-#viewfinder[data-filter="warm"]  { filter: sepia(0.35) saturate(1.2); }
-#viewfinder[data-filter="none"].night-boost { filter: brightness(1.25) contrast(1.08); }
-#viewfinder[data-filter="vivid"].night-boost { filter: saturate(1.5) contrast(1.12) brightness(1.25); }
+/* Filters (applied to preview via JS; baked into captures) */
+
+/* Portrait mode: live background blur. A soft oval keeps the subject sharp
+   while everything around it is blurred — the same shape the capture uses. */
+.portrait-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(9px) saturate(1.08);
+  -webkit-backdrop-filter: blur(9px) saturate(1.08);
+  mask-image: radial-gradient(ellipse 46% 34% at 50% 42%, transparent 34%, black 78%);
+  -webkit-mask-image: radial-gradient(ellipse 46% 34% at 50% 42%, transparent 34%, black 78%);
+}
 
 .ratio-mask {
   position: absolute;
@@ -226,11 +233,14 @@ button:focus-visible, a:focus-visible {
 
 .rail-strip {
   display: flex;
-  justify-content: center;
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* margin:auto centers when it fits but stays scrollable (clipped on both
+   sides) when the strip overflows — unlike justify-content:center. */
+.rail-strip > .strip-group:first-child { margin-left: auto; }
+.rail-strip > .strip-group:last-child { margin-right: auto; }
 .rail-strip::-webkit-scrollbar { display: none; }
 .strip-group {
   display: flex;

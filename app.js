@@ -8,7 +8,7 @@
     video: $("viewfinder"), frame: $("frame"), ratioMask: $("ratioMask"),
     gridOverlay: $("gridOverlay"), gridBtn: $("gridBtn"),
     aiChip: $("aiChip"), aiChipText: $("aiChipText"), lensTag: $("lensTag"),
-    reticle: $("reticle"), countdown: $("countdown"),
+    reticle: $("reticle"), countdown: $("countdown"), portraitVeil: $("portraitVeil"),
     shutter: $("shutter"), swapBtn: $("swapBtn"),
     galleryBtn: $("galleryBtn"), gallery: $("gallery"), closeGallery: $("closeGallery"),
     galleryStrip: $("galleryStrip"), galleryEmpty: $("galleryEmpty"),
@@ -27,6 +27,7 @@
     focusRange: $("focusRange"), focusVal: $("focusVal"),
     zoomRange: $("zoomRange"), zoomVal: $("zoomVal"),
     histBtn: $("histBtn"), spotBtn: $("spotBtn"), pngBtn: $("pngBtn"), proReset: $("proReset"),
+    aiBtn: $("aiBtn"), wmBtn: $("wmBtn"),
     histogram: $("histogram"),
   };
 
@@ -39,11 +40,19 @@
     shots: [], selected: -1, demo: false, lastClipUrl: null,
     pro: { ...DEFAULT_PRO }, sim: {}, // per-control APPLIED vs SIMULATED
     hist: false, histTimer: null, spot: false, spotHue: null, png: false,
+    aiEnhance: true, watermark: false,
   };
-
   const FILTER_CSS = {
-    none: "none", vivid: "saturate(1.5) contrast(1.12)",
-    mono: "grayscale(1) contrast(1.1)", warm: "sepia(0.35) saturate(1.2)",
+    none: "none",
+    vivid: "saturate(1.5) contrast(1.12)",
+    mono: "grayscale(1) contrast(1.1)",
+    warm: "sepia(0.35) saturate(1.2)",
+    cool: "saturate(1.15) contrast(1.05) brightness(1.04) hue-rotate(-10deg)",
+    noir: "grayscale(1) contrast(1.55) brightness(0.9)",
+    chrome: "saturate(1.8) contrast(1.2) brightness(1.05)",
+    fade: "contrast(0.82) brightness(1.14) saturate(0.78)",
+    pop: "saturate(2) contrast(1.3)",
+    dusk: "sepia(0.45) hue-rotate(-20deg) saturate(1.4) contrast(1.1) brightness(0.95)",
   };
   const MODE_LABEL = { photo: "PHOTO", portrait: "PORTRAIT", night: "NIGHT", video: "VIDEO", pro: "PRO" };
 
@@ -84,6 +93,8 @@
       if (state.sim.iso) parts.push(`brightness(${Math.min(2.5, Math.max(0.35, state.pro.iso / 400)).toFixed(2)})`);
       if (state.sim.ev) parts.push(`brightness(${Math.pow(2, state.pro.ev * 0.5).toFixed(2)})`);
     }
+    // AI Enhancer: sensor-level tone boost, identical on front and back cameras
+    if (state.aiEnhance) parts.push("saturate(1.1) contrast(1.06) brightness(1.04)");
     els.video.style.filter = parts.length ? parts.join(" ") : "";
     els.video.style.transform = state.facing === "user" ? "scaleX(-1)" : "";
     const z = state.mode === "pro" && state.sim.zoom ? state.pro.zoom : 1;
@@ -92,10 +103,15 @@
 
   /* ---------- AI status chip ---------- */
   function updateAiChip() {
-    const feats = ["HDR"];
+    if (!state.aiEnhance) {
+      els.aiChipText.textContent = "AI OFF · RAW SENSOR";
+      els.aiChip.classList.remove("live");
+      return;
+    }
+    const feats = ["HDR", "ENHANCE"];
     if (state.mode === "pro") feats.push("PRO MANUAL");
     if (state.mode === "night") feats.push("NIGHT BOOST");
-    if (state.mode === "portrait") feats.push("FACE");
+    if (state.mode === "portrait") feats.push("BOKEH");
     if (state.mode === "video") feats.push("EIS");
     if (state.filter !== "none") feats.push("AI TONE");
     els.aiChipText.textContent = "AI ON · " + feats.join(" · ");
@@ -312,6 +328,48 @@
     ctx.putImageData(img, 0, 0);
   }
 
+  /* ---------- Portrait bokeh: sharp subject oval, blurred background ---------- */
+  function applyPortraitBokeh(g, w, h) {
+    const blur = document.createElement("canvas");
+    blur.width = w; blur.height = h;
+    const bg = blur.getContext("2d");
+    bg.filter = "blur(" + Math.max(10, Math.round(w / 160)) + "px) saturate(1.08)";
+    bg.drawImage(g.canvas, 0, 0);
+    bg.filter = "none";
+    // Punch a soft oval hole in the blurred layer where the subject sits
+    bg.globalCompositeOperation = "destination-out";
+    const rx = w * 0.46, ry = h * 0.34;
+    const gx = w / 2, gy = h * 0.42;
+    const grad = bg.createRadialGradient(0, 0, 0, 0, 0, 1);
+    grad.addColorStop(0.34, "rgba(0,0,0,1)");
+    grad.addColorStop(0.78, "rgba(0,0,0,0)");
+    bg.save();
+    bg.translate(gx, gy);
+    bg.scale(rx, ry);
+    bg.fillStyle = grad;
+    bg.fillRect(-1, -1, 2, 2);
+    bg.restore();
+    bg.globalCompositeOperation = "source-over";
+    g.drawImage(blur, 0, 0);
+  }
+
+  /* ---------- Shot on Z10R watermark (Moto-style stamp) ---------- */
+  function stampWatermark(g, w, h) {
+    const size = Math.max(18, Math.round(w / 34));
+    g.save();
+    g.font = `600 ${size}px ui-monospace, monospace`;
+    g.textAlign = "right";
+    g.textBaseline = "bottom";
+    g.shadowColor = "rgba(0,0,0,0.6)";
+    g.shadowBlur = size / 3;
+    g.fillStyle = "rgba(255,255,255,0.92)";
+    g.fillText("Shot on Z10R", w - size, h - size * 1.6);
+    g.fillStyle = "rgba(255,179,0,0.95)";
+    g.font = `500 ${Math.round(size * 0.62)}px ui-monospace, monospace`;
+    g.fillText("50MP OIS · AI ENHANCED", w - size, h - size * 0.55);
+    g.restore();
+  }
+
   /* ---------- Capture ---------- */
   function capturePhoto() {
     const v = els.video;
@@ -337,7 +395,11 @@
     g.filter = css && css !== "none" ? css : "none";
     g.drawImage(v, cx, cy, w, h, 0, 0, w, h);
     g.filter = "none";
+    if (state.facing === "user") { g.translate(w, 0); g.scale(-1, 1); } // un-mirror for pixel work
+    if (state.mode === "portrait") applyPortraitBokeh(g, w, h);
+    g.setTransform(1, 0, 0, 1, 0, 0);
     if (state.spot) applySpotColor(g, w, h);
+    if (state.watermark) stampWatermark(g, w, h);
     const fmt = state.png && state.mode === "pro";
     const url = fmt ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.92);
     addShot(url, fmt ? "png" : "photo");
@@ -515,6 +577,22 @@
     els.gridBtn.classList.toggle("active");
   });
 
+  els.aiBtn.addEventListener("click", () => {
+    state.aiEnhance = !state.aiEnhance;
+    els.aiBtn.classList.toggle("active", state.aiEnhance);
+    els.aiBtn.setAttribute("aria-pressed", String(state.aiEnhance));
+    updateVideoFilter();
+    updateAiChip();
+    toast(state.aiEnhance ? "AI ENHANCER ON (FRONT + BACK)" : "AI ENHANCER OFF · RAW SENSOR");
+  });
+
+  els.wmBtn.addEventListener("click", () => {
+    state.watermark = !state.watermark;
+    els.wmBtn.classList.toggle("active", state.watermark);
+    els.wmBtn.setAttribute("aria-pressed", String(state.watermark));
+    toast(state.watermark ? "SHOT ON Z10R WATERMARK ON" : "WATERMARK OFF");
+  });
+
   document.querySelector(".modes").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mode]");
     if (!b) return;
@@ -527,6 +605,7 @@
     });
     const pro = state.mode === "pro";
     els.proPanel.classList.toggle("hidden", !pro);
+    els.portraitVeil.classList.toggle("hidden", state.mode !== "portrait");
     if (pro) {
       applyPro(true);
       els.histBtn.click();
