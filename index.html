@@ -110,6 +110,10 @@
           <div class="strip-group" role="group" aria-label="Watermark">
             <button class="strip-btn" id="wmBtn" aria-pressed="false">WATERMARK</button>
           </div>
+          <div class="strip-group" id="resStrip" role="group" aria-label="Resolution">
+            <button class="strip-btn active" data-res="50">50MP</button>
+            <button class="strip-btn" data-res="12">12MP</button>
+          </div>
           <div class="strip-group" id="ratioStrip" role="group" aria-label="Aspect ratio">
             <button class="strip-btn active" data-ratio="4:3">4:3</button>
             <button class="strip-btn" data-ratio="16:9">16:9</button>
@@ -177,9 +181,19 @@
         <p class="empty-note" id="galleryEmpty">No captures yet. Press the shutter.</p>
         <img id="shotFull" alt="Captured photo" hidden />
       </div>
+      <div class="shot-info hidden" id="shotInfo" aria-label="Capture details">
+        <p class="info-row"><span>Name</span><b id="infoName"></b></p>
+        <p class="info-row"><span>Time</span><b id="infoTime"></b></p>
+        <p class="info-row"><span>Size</span><b id="infoSize"></b></p>
+        <p class="info-row"><span>Parameters</span><b id="infoParams"></b></p>
+        <p class="info-sub" id="infoExif">26.00 mm&ensp;F/1.79&ensp;1/33S&ensp;ISO 177&ensp;EV 0</p>
+        <canvas id="infoHist" width="280" height="80" aria-label="RGB histogram"></canvas>
+        <p class="info-row"><span>Path</span><b id="infoPath"></b></p>
+      </div>
       <div class="gallery-strip" id="galleryStrip" aria-label="Thumbnails"></div>
       <div class="shot-actions">
         <button class="btn-ghost" id="downloadShot" disabled>SAVE</button>
+        <button class="btn-ghost" id="infoShot" disabled>INFO</button>
         <button class="btn-ghost" id="deleteShot" disabled>DELETE</button>
       </div>
     </div>

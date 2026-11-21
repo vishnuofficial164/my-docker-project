@@ -19,6 +19,9 @@
     retryCam: $("retryCam"), demoCam: $("demoCam"),
     flash: $("flash"), toast: $("toast"),
     timerStrip: $("timerStrip"), ratioStrip: $("ratioStrip"), filterStrip: $("filterStrip"),
+    resStrip: $("resStrip"), infoShot: $("infoShot"), shotInfo: $("shotInfo"),
+    infoName: $("infoName"), infoTime: $("infoTime"), infoSize: $("infoSize"),
+    infoParams: $("infoParams"), infoExif: $("infoExif"), infoHist: $("infoHist"), infoPath: $("infoPath"),
     proPanel: $("proPanel"), proReadout: $("proReadout"),
     isoRange: $("isoRange"), isoVal: $("isoVal"),
     shutRange: $("shutRange"), shutVal: $("shutVal"),
@@ -41,6 +44,13 @@
     pro: { ...DEFAULT_PRO }, sim: {}, // per-control APPLIED vs SIMULATED
     hist: false, histTimer: null, spot: false, spotHue: null, png: false,
     aiEnhance: true, watermark: false,
+    res: 50, // MP capture mode: 50 (full) or 12 (pixel-binned), Z10R-style
+  };
+  // Z10R 5G sensor map (from the phone's own EXIF: back 6144x8192 full / 3072x4096
+  // binned, front 4896x6528 full; focal lengths 26mm back, 28mm front)
+  const CAM_SPECS = {
+    environment: { full: [8192, 6144], binned: [4096, 3072], focal: "26.00 mm", f: "F/1.79", fullLabel: "50MP", binnedLabel: "12MP" },
+    user: { full: [6528, 4896], binned: [3264, 2448], focal: "28.00 mm", f: "F/16.0", fullLabel: "32MP", binnedLabel: "8MP" },
   };
   const FILTER_CSS = {
     none: "none",
@@ -124,10 +134,12 @@
     els.camError.classList.add("hidden");
     els.video.classList.remove("demo");
     try {
+      const spec = CAM_SPECS[state.facing];
+      const [iw, ih] = state.res === 50 ? spec.full : spec.binned;
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: state.facing,
-          width: { ideal: 3840 }, height: { ideal: 2160 },
+          width: { ideal: iw }, height: { ideal: ih },
         },
         audio: state.mode === "video",
       });
@@ -186,11 +198,11 @@
   }
 
   function updateLensTag() {
-    const isFront = state.facing === "user";
-    const res = isFront ? "32MP" : "50MP";
+    const spec = CAM_SPECS[state.facing];
+    const res = state.res === 50 ? spec.fullLabel : spec.binnedLabel;
     els.lensTag.textContent = state.mode === "video"
-      ? `${res} · 4K${isFront ? "" : " · OIS"}`
-      : `${res}${isFront ? " · FRONT LENS" : " · OIS"}`;
+      ? `${res} · 4K${state.facing === "user" ? "" : " · OIS"}`
+      : `${res}${state.facing === "user" ? " · FRONT LENS" : " · OIS"}`;
   }
 
   /* ---------- PRO manual controls ---------- */
@@ -402,7 +414,76 @@
     if (state.watermark) stampWatermark(g, w, h);
     const fmt = state.png && state.mode === "pro";
     const url = fmt ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.92);
-    addShot(url, fmt ? "png" : "photo");
+    addShot(url, fmt ? "png" : "photo", shotMeta(url, w, h, fmt));
+  }
+
+  /* ---------- Z10R-style EXIF metadata (matches the phone gallery's info panel) ---------- */
+  function exifReadout() {
+    const p = state.pro;
+    const den = SHUTTER_STOPS[p.shutIdx];
+    return { shutter: den === 1 ? "1s" : `1/${den}S`, iso: p.iso, ev: p.ev.toFixed(0) };
+  }
+
+  function shotMeta(url, w, h, fmt) {
+    const spec = CAM_SPECS[state.facing];
+    const now = new Date();
+    const p2 = (n) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}_${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
+    const ext = fmt ? "png" : "jpg";
+    const base64 = url.split(",")[1] || "";
+    return {
+      name: `IMG_${stamp}.${ext}`,
+      time: `${p2(now.getDate())}/${p2(now.getMonth() + 1)}/${now.getFullYear()}, ${((now.getHours() + 11) % 12) + 1}:${p2(now.getMinutes())} ${now.getHours() < 12 ? "am" : "pm"}`,
+      bytes: Math.round(base64.length * 0.75),
+      w, h,
+      focal: spec.focal, f: spec.f,
+      exif: exifReadout(),
+      path: `Phone storage/DCIM/Z10R Camera/IMG_${stamp}.${ext}`,
+    };
+  }
+
+  function fmtMB(b) { return (b / 1048576).toFixed(2) + "MB"; }
+
+  function renderInfo(s) {
+    const has = !!s;
+    els.infoShot.disabled = !has || s.kind === "video";
+    if (!has || s.kind === "video") { els.shotInfo.classList.add("hidden"); return; }
+    els.infoName.textContent = s.name;
+    els.infoTime.textContent = s.time;
+    els.infoSize.textContent = `${fmtMB(s.bytes)}  ${s.w} × ${s.h}`;
+    els.infoParams.textContent = "iQOO Z10R 5G,  iQOO";
+    els.infoExif.textContent = `${s.focal}   ${s.f}   ${s.exif.shutter}   ISO ${s.exif.iso}   EV ${s.exif.ev}`;
+    els.infoPath.textContent = s.path;
+    // RGB histogram from the captured pixels, like the phone's info sheet
+    const ctx = els.infoHist.getContext("2d");
+    const W = els.infoHist.width, H = els.infoHist.height;
+    ctx.clearRect(0, 0, W, H);
+    const img = new Image();
+    img.onload = () => {
+      const off = document.createElement("canvas");
+      off.width = 128; off.height = 128;
+      const octx = off.getContext("2d", { willReadFrequently: true });
+      octx.drawImage(img, 0, 0, 128, 128);
+      const d = octx.getImageData(0, 0, 128, 128).data;
+      const chans = [[255, 82, 82], [82, 255, 82], [82, 122, 255]];
+      const bins = [new Array(64).fill(0), new Array(64).fill(0), new Array(64).fill(0)];
+      for (let i = 0; i < d.length; i += 4) {
+        for (let ch = 0; ch < 3; ch++) bins[ch][Math.min(63, d[i + ch] >> 2)]++;
+      }
+      const max = Math.max(...bins[0], ...bins[1], ...bins[2], 1);
+      ctx.globalCompositeOperation = "lighter";
+      bins.forEach((b, ch) => {
+        ctx.strokeStyle = `rgb(${chans[ch].join(",")})`;
+        ctx.beginPath();
+        b.forEach((n, i) => {
+          const x = (i / 63) * W, y = H - (n / max) * (H - 6) - 2;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.stroke();
+      });
+      ctx.globalCompositeOperation = "source-over";
+    };
+    img.src = s.url;
   }
 
   function flashFx() {
@@ -451,8 +532,8 @@
   }
 
   /* ---------- Gallery ---------- */
-  function addShot(url, kind) {
-    state.shots.unshift({ url, kind });
+  function addShot(url, kind, meta) {
+    state.shots.unshift(Object.assign({ url, kind }, meta || {}));
     state.selected = 0;
     renderGallery();
     updateThumb();
@@ -497,6 +578,7 @@
     els.shotFull.hidden = !has;
     els.downloadShot.disabled = !has;
     els.deleteShot.disabled = !has;
+    renderInfo(has ? state.shots[i] : null);
     if (has) {
       els.shotFull.src = state.shots[i].url;
       [...els.galleryStrip.children].forEach((el, j) => el.classList.toggle("selected", j === i));
@@ -529,6 +611,11 @@
   els.swapBtn.addEventListener("click", () => {
     if (state.recording) { toast("STOP RECORDING FIRST"); return; }
     state.facing = state.facing === "environment" ? "user" : "environment";
+    if (state.res !== 50) { // front sensor has no 50MP mode; snap the toggle back
+      state.res = 50;
+      [...els.resStrip.children].forEach((x) => x.classList.toggle("active", x.dataset.res === "50"));
+    }
+    updateLensTag();
     if (state.demo) { startDemo(); } else { startCamera(); }
   });
 
@@ -561,6 +648,25 @@
     els.ratioMask.dataset.ratio = state.ratio;
     [...els.ratioStrip.children].forEach((x) => x.classList.toggle("active", x === b));
     applyRatio();
+  });
+
+  // Resolution mode: re-opens the stream at the Z10R sensor size for the mode
+  els.resStrip.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-res]");
+    if (!b || Number(b.dataset.res) === state.res) return;
+    state.res = Number(b.dataset.res);
+    [...els.resStrip.children].forEach((x) => x.classList.toggle("active", x === b));
+    updateLensTag();
+    if (!state.demo && state.stream) {
+      const keepFacing = state.facing;
+      stopCamera();
+      startCamera(keepFacing);
+    }
+    toast(state.res === 50 ? "FULL-RES SENSOR ON" : "BINNED MODE · 4-IN-1");
+  });
+
+  els.infoShot.addEventListener("click", () => {
+    els.shotInfo.classList.toggle("hidden");
   });
 
   els.filterStrip.addEventListener("click", (e) => {
@@ -675,8 +781,8 @@
     if (!s) return;
     const a = document.createElement("a");
     a.href = s.url;
-    a.download = s.kind === "video" ? "z10r-capture.webm"
-      : s.kind === "png" ? "z10r-capture.png" : "z10r-capture.jpg";
+    a.download = s.name || (s.kind === "video" ? "z10r-capture.webm"
+      : s.kind === "png" ? "z10r-capture.png" : "z10r-capture.jpg");
     a.click();
   });
 
